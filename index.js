@@ -166,10 +166,18 @@ module.exports = function(/*options, callback*/) {
           if (err) {
             return callback(err);
           }
-          return processChildDependencies(dependency, callback);
+          try{
+            return processChildDependencies(dependency, callback);
+          }catch (e) {
+            console.error(e);
+          }
         });
       } else {
-        return processChildDependencies(dependency, callback);
+        try{
+          return processChildDependencies(dependency, callback);
+        }catch (e) {
+          console.error(e);
+        }
       }
     }
 
@@ -188,9 +196,17 @@ module.exports = function(/*options, callback*/) {
         });
       if (childDependencies.length > 0) {
         childDependencies.forEach(function(d) {
-          resolveDependencyUnknowns(d, dependency);
+          try{
+            resolveDependencyUnknowns(d, dependency);
+          }catch (e) {
+            console.error(e);
+          }
         });
-        dependencyQueuePush(childDependencies);
+        try{
+          dependencyQueuePush(childDependencies);
+        }catch (e) {
+          console.error(e);
+        }
       }
       return callback();
     }
@@ -207,7 +223,12 @@ module.exports = function(/*options, callback*/) {
     });
 
     function download(dependency, pomPath, callback) {
-      return downloadFile(dependency.getPomPath(), pomPath, dependency.reason, function(err, url) {
+      var dependencyPomPath = dependency.pomPath != null ? dependency.pomPath : dependency.getPomPath();
+      if (dependencyPomPath.endsWith('-SNAPSHOT.pom')) {
+        dependencyPomPath = dependencyPomPath.substring(0, dependencyPomPath.lastIndexOf('/') + 1) + 'maven-metadata.xml';
+        pomPath = pomPath.substring(0, pomPath.lastIndexOf(path.sep) + 1) + 'maven-metadata.xml';
+      }
+      return downloadFile(dependencyPomPath, pomPath, dependency.reason, function(err, url) {
         if (err) {
           return callback(err);
         }
@@ -230,6 +251,11 @@ module.exports = function(/*options, callback*/) {
       xml2js.parseString(data, function(err, xml) {
         if (err) {
           return callback(err);
+        }
+        if (dependency.pomPath.endsWith('maven-metadata.xml')) {
+          var snapshotVersion = xml.metadata.artifactId + '-' + xml.metadata.versioning["0"].snapshotVersions["0"].snapshotVersion["0"].value["0"];
+          dependency.pomPath = dependency.getPomPath().substring(0, dependency.getPomPath().lastIndexOf('/') + 1) + snapshotVersion + '.pom';
+          return download(dependency, path.resolve(options.localRepository, dependency.getPomPath()), callback);
         }
         dependency.pomXml = xml;
         if (dependency.getParent()) {
@@ -255,7 +281,12 @@ module.exports = function(/*options, callback*/) {
         dependency.jarPath = jarPath;
         return callback();
       } else {
-        return downloadFile(dependency.getJarPath(), jarPath, dependency.reason, function(err, url) {
+        var dependencyJarPath = dependency.getJarPath();
+        if (dependency.version.endsWith('-SNAPSHOT')) {
+          var snapshotVersion = dependency.pomUrl.substring(dependency.pomUrl.lastIndexOf('/') + 1, dependency.pomUrl.lastIndexOf('.'));
+          dependencyJarPath = dependencyJarPath.substring(0, dependencyJarPath.lastIndexOf('/') + 1) + snapshotVersion + '.jar';
+        }
+        return downloadFile(dependencyJarPath, jarPath, dependency.reason, function(err, url) {
           if (err) {
             return callback(err);
           }
